@@ -146,6 +146,36 @@ function getComponentProps(
   }`;
 }
 
+function getDecorators(sourceFile: SourceFile): string {
+  const sourceText = sourceFile.getFullText();
+  let decorators = "";
+
+  if (sourceText.includes("useChart()")) {
+    decorators += `
+    (Story) => (
+      <ChartContainer config={{ desktop: { label: 'Desktop', color: 'hsl(var(--chart-1))' } }}>
+        <Story />
+      </ChartContainer>
+    ),
+`;
+  }
+
+  if (sourceText.includes("useFormContext()")) {
+    decorators += `
+    (Story) => {
+      const form = useForm();
+      return (
+        <FormProvider {...form}>
+          <Story />
+        </FormProvider>
+      );
+    },
+`;
+  }
+
+  return decorators.length > 0 ? `[${decorators}]` : "[]";
+}
+
 export async function generateStories() {
   console.log("Generating Storybook stories...");
 
@@ -182,6 +212,16 @@ export async function generateStories() {
       ", "
     )} } from './${rawComponentName}';`;
 
+    // Add imports for decorators if needed
+    if (sourceFile.getFullText().includes("useChart()")) {
+      if (!exportNames.includes("ChartContainer")) {
+        importStatement += `\nimport { ChartContainer } from './chart';`;
+      }
+    }
+    if (sourceFile.getFullText().includes("useFormContext()")) {
+      importStatement += `\nimport { useForm, FormProvider } from 'react-hook-form';`;
+    }
+
     // Use the relative path from components/ as part of the title and story export name
     const relPath = path
       .relative("components", componentPath)
@@ -198,6 +238,7 @@ ${importStatement}
 
     exportNames.forEach((exportedComponent, idx) => {
       const defaultArgs = getComponentProps(sourceFile, exportedComponent);
+      const decorators = getDecorators(sourceFile);
 
       // Prefix the title with the relative path and component name to ensure uniqueness
       const storyTitle = `Components/${relPathForTitle}/${exportedComponent}`;
@@ -211,6 +252,7 @@ const meta_${exportedComponent}: Meta<typeof ${exportedComponent}> = {
   },
   tags: ['autodocs'],
   argTypes: {},
+  decorators: ${decorators},
 };
 `;
 

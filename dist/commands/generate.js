@@ -119,6 +119,32 @@ function getComponentProps(sourceFile, componentName) {
     ${args.join(",\n    ")}
   }`;
 }
+function getDecorators(sourceFile) {
+    const sourceText = sourceFile.getFullText();
+    let decorators = "";
+    if (sourceText.includes("useChart()")) {
+        decorators += `
+    (Story) => (
+      <ChartContainer config={{ desktop: { label: 'Desktop', color: 'hsl(var(--chart-1))' } }}>
+        <Story />
+      </ChartContainer>
+    ),
+`;
+    }
+    if (sourceText.includes("useFormContext()")) {
+        decorators += `
+    (Story) => {
+      const form = useForm();
+      return (
+        <FormProvider {...form}>
+          <Story />
+        </FormProvider>
+      );
+    },
+`;
+    }
+    return decorators.length > 0 ? `[${decorators}]` : "[]";
+}
 async function generateStories() {
     console.log("Generating Storybook stories...");
     const componentPaths = await (0, fast_glob_1.default)("components/**/*.tsx", {
@@ -145,6 +171,15 @@ async function generateStories() {
         if (exportNames.length === 0)
             continue;
         let importStatement = `import { ${exportNames.join(", ")} } from './${rawComponentName}';`;
+        // Add imports for decorators if needed
+        if (sourceFile.getFullText().includes("useChart()")) {
+            if (!exportNames.includes("ChartContainer")) {
+                importStatement += `\nimport { ChartContainer } from './chart';`;
+            }
+        }
+        if (sourceFile.getFullText().includes("useFormContext()")) {
+            importStatement += `\nimport { useForm, FormProvider } from 'react-hook-form';`;
+        }
         // Use the relative path from components/ as part of the title and story export name
         const relPath = path_1.default
             .relative("components", componentPath)
@@ -159,6 +194,7 @@ ${importStatement}
 `;
         exportNames.forEach((exportedComponent, idx) => {
             const defaultArgs = getComponentProps(sourceFile, exportedComponent);
+            const decorators = getDecorators(sourceFile);
             // Prefix the title with the relative path and component name to ensure uniqueness
             const storyTitle = `Components/${relPathForTitle}/${exportedComponent}`;
             storyFileContent += `
@@ -170,6 +206,7 @@ const meta_${exportedComponent}: Meta<typeof ${exportedComponent}> = {
   },
   tags: ['autodocs'],
   argTypes: {},
+  decorators: ${decorators},
 };
 `;
             // Only the first meta is exported as default
