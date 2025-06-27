@@ -161,88 +161,67 @@ export async function generateStories() {
     const componentName = toPascalCase(rawComponentName);
     const storyFilePath = componentPath.replace(".tsx", ".stories.tsx");
 
-    const capitalizedComponentName = componentName; // Already PascalCase
+    // Get all named exports (excluding types)
     const namedExports = sourceFile.getExportedDeclarations();
     const exportNames: string[] = [];
-    let primaryComponentNameForMeta = capitalizedComponentName;
-
-    // Collect all named exports
     namedExports.forEach((declarations, name) => {
-      if (name === "default") {
-        const defaultExportDeclaration = declarations[0];
-        if (defaultExportDeclaration) {
-          // Attempt to get the name if it's a FunctionDeclaration or VariableDeclaration
-          if (
-            Node.isFunctionDeclaration(defaultExportDeclaration) ||
-            Node.isVariableDeclaration(defaultExportDeclaration)
-          ) {
-            const actualName = defaultExportDeclaration.getName();
-            if (actualName) {
-              exportNames.push(actualName);
-              primaryComponentNameForMeta = actualName; // Use the actual name for meta component
-            } else {
-              exportNames.push(capitalizedComponentName);
-            }
-          } else if (Node.isClassDeclaration(defaultExportDeclaration)) {
-            const actualName = defaultExportDeclaration.getName();
-            if (actualName) {
-              exportNames.push(actualName);
-              primaryComponentNameForMeta = actualName;
-            } else {
-              exportNames.push(capitalizedComponentName);
-            }
-          } else {
-            // For other default exports (e.g., expressions), fallback to capitalized component name
-            exportNames.push(capitalizedComponentName);
-          }
-        } else {
-          exportNames.push(capitalizedComponentName);
-        }
-      } else {
+      // Only include function, variable, or class exports (not types/interfaces)
+      const decl = declarations[0];
+      if (
+        Node.isFunctionDeclaration(decl) ||
+        Node.isVariableDeclaration(decl) ||
+        Node.isClassDeclaration(decl)
+      ) {
         exportNames.push(name);
       }
     });
 
-    // Filter out duplicates and ensure the primary component name is included
-    const uniqueExportNames = Array.from(new Set(exportNames));
-    const otherExports = uniqueExportNames.filter(
-      (exp) => exp !== primaryComponentNameForMeta
-    );
+    if (exportNames.length === 0) continue;
 
-    let importStatement = `import { ${primaryComponentNameForMeta}`;
-    if (otherExports.length > 0) {
-      importStatement += `, ${otherExports.join(", ")}`;
-    }
-    importStatement += ` } from './${rawComponentName}';`;
-
-    const defaultArgs = getComponentProps(
-      sourceFile,
-      primaryComponentNameForMeta
-    );
+    let importStatement = `import { ${exportNames.join(
+      ", "
+    )} } from './${rawComponentName}';`;
 
     let storyFileContent = `
 import React from 'react';
 import { Meta, StoryObj } from '@storybook/react';
 ${importStatement}
+`;
 
-const meta: Meta<typeof ${primaryComponentNameForMeta}> = {
-  title: 'Components/${capitalizedComponentName}',
-  component: ${primaryComponentNameForMeta},
+    exportNames.forEach((exportedComponent, idx) => {
+      const defaultArgs = getComponentProps(sourceFile, exportedComponent);
+
+      storyFileContent += `
+const meta_${exportedComponent}: Meta<typeof ${exportedComponent}> = {
+  title: 'Components/${exportedComponent}',
+  component: ${exportedComponent},
   parameters: {
     layout: 'centered',
   },
   tags: ['autodocs'],
   argTypes: {},
 };
+`;
 
-export default meta;
+      // Only the first meta is exported as default
+      if (idx === 0) {
+        storyFileContent += `
+export default meta_${exportedComponent};
+`;
+      } else {
+        storyFileContent += `
+export { meta_${exportedComponent} };
+`;
+      }
 
-type Story = StoryObj<typeof ${primaryComponentNameForMeta}>;
+      storyFileContent += `
+type Story_${exportedComponent} = StoryObj<typeof ${exportedComponent}>;
 
-export const Default: Story = {
+export const Default_${exportedComponent}: Story_${exportedComponent} = {
   args: ${defaultArgs},
 };
 `;
+    });
 
     project
       .createSourceFile(storyFilePath, storyFileContent, { overwrite: true })
