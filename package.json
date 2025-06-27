@@ -1,0 +1,58 @@
+{
+  "name": "storybook-manager",
+  "version": "1.0.0",
+  "description": "Effortlessly generate and clean Storybook stories for all React components in your project",
+  "main": "dist/index.js",
+  "bin": {
+    "storybook-manager": "./bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepublishOnly": "npm run build",
+    "story:generate": "node bin/cli.js generate",
+    "story:clean": "node bin/cli.js clean"
+  },
+  "keywords": [
+    "storybook",
+    "react",
+    "components",
+    "cli",
+    "automation",
+    "stories",
+    "typescript"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/storybook-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/storybook-manager/issues"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/storybook-manager#readme",
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "commander": "^11.1.0",
+    "fast-glob": "^3.3.2",
+    "ts-morph": "^21.0.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.9.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
