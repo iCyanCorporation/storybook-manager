@@ -1,10 +1,10 @@
 {
   "name": "storybook-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Effortlessly generate and clean Storybook stories for all React components in your project",
   "main": "dist/index.js",
   "bin": {
-    "storybook-manager": "./bin/cli.js"
+    "storybook-manager": "bin/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -24,16 +24,16 @@
     "stories",
     "typescript"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "icyanstudio2025@gmail.com",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/storybook-manager.git"
+    "url": "git+https://github.com/iCyanCorporation/storybook-manager.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/storybook-manager/issues"
+    "url": "https://github.com/iCyanCorporation/storybook-manager/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/storybook-manager#readme",
+  "homepage": "https://github.com/iCyanCorporation/storybook-manager#readme",
   "files": [
     "dist",
     "bin",
