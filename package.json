@@ -1,6 +1,6 @@
 {
   "name": "storybook-manager",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Effortlessly generate and clean Storybook stories for all React components in your project",
   "main": "dist/index.js",
   "bin": {
@@ -41,6 +41,8 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
     "commander": "^11.1.0",
     "fast-glob": "^3.3.2",
     "ts-morph": "^21.0.1"
