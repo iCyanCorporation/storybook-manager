@@ -55,6 +55,15 @@ npm install --save-dev storybook-manager
 
 ### 4️⃣ Place your React components under a `components/` folder in your project root.
 
+### 5️⃣ Import your global CSS in Storybook's `preview.ts`
+
+Add the following line to your `.storybook/preview.ts` file to ensure your global styles are applied in Storybook:
+
+```ts
+import type { Preview } from "@storybook/nextjs-vite";
+import "@/app/globals.css";
+```
+
 ---
 
 ## 🚀 Usage
