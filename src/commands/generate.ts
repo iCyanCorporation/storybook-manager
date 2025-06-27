@@ -182,6 +182,14 @@ export async function generateStories() {
       ", "
     )} } from './${rawComponentName}';`;
 
+    // Use the relative path from components/ as part of the title and story export name
+    const relPath = path
+      .relative("components", componentPath)
+      .replace(/\\/g, "/")
+      .replace(/\.tsx$/, "");
+    const relPathForTitle = relPath.split("/").map(toPascalCase).join("/");
+    const relPathForExport = relPath.replace(/\/|-/g, "_");
+
     let storyFileContent = `
 import React from 'react';
 import { Meta, StoryObj } from '@storybook/react';
@@ -191,9 +199,12 @@ ${importStatement}
     exportNames.forEach((exportedComponent, idx) => {
       const defaultArgs = getComponentProps(sourceFile, exportedComponent);
 
+      // Prefix the title with the relative path and component name to ensure uniqueness
+      const storyTitle = `Components/${relPathForTitle}/${exportedComponent}`;
+
       storyFileContent += `
 const meta_${exportedComponent}: Meta<typeof ${exportedComponent}> = {
-  title: 'Components/${exportedComponent}',
+  title: '${storyTitle}',
   component: ${exportedComponent},
   parameters: {
     layout: 'centered',
@@ -214,10 +225,13 @@ export { meta_${exportedComponent} };
 `;
       }
 
+      // Prefix the story export name with the relative path and component name
+      const storyExportName = `Default_${relPathForExport}_${exportedComponent}`;
+
       storyFileContent += `
 type Story_${exportedComponent} = StoryObj<typeof ${exportedComponent}>;
 
-export const Default_${exportedComponent}: Story_${exportedComponent} = {
+export const ${storyExportName}: Story_${exportedComponent} = {
   args: ${defaultArgs},
 };
 `;
