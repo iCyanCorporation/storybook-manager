@@ -29,6 +29,8 @@ const REACT_HTML_PROPS = [
   "key",
 ];
 
+// ... (unchanged utility functions)
+
 function isLocalDeclaration(
   prop: PropertySignature,
   sourceFile: SourceFile
@@ -43,61 +45,88 @@ function getComponentProps(
 ): string {
   let props: PropertySignature[] = [];
 
+  // Try to find the component
   const component =
     sourceFile.getFunction(componentName) ||
     sourceFile.getVariableDeclaration(componentName);
 
-  if (component) {
-    const componentType = component.getType();
-    const callSignatures = componentType.getCallSignatures();
+  // Look for interface/type definitions that might be props
+  const interfaces = sourceFile.getInterfaces();
+  const typeAliases = sourceFile.getTypeAliases();
 
-    if (callSignatures.length > 0) {
-      const propsParam = callSignatures[0].getParameters()[0];
-      if (propsParam) {
-        const propsParamType = propsParam.getTypeAtLocation(component);
-        if (propsParamType.isIntersection()) {
-          propsParamType.getIntersectionTypes().forEach((t) => {
-            props.push(
-              ...t
+  // Check for props interface (e.g., ButtonProps, MyComponentProps)
+  const propsInterfaceName = `${componentName}Props`;
+  const propsInterface = interfaces.find(
+    (i) => i.getName() === propsInterfaceName
+  );
+
+  if (propsInterface) {
+    props.push(...propsInterface.getProperties());
+  } else {
+    // Try to extract from component type
+    if (component) {
+      const componentType = component.getType();
+      const callSignatures = componentType.getCallSignatures();
+
+      if (callSignatures.length > 0) {
+        const propsParam = callSignatures[0].getParameters()[0];
+        if (propsParam) {
+          const propsParamType = propsParam.getTypeAtLocation(component);
+          if (propsParamType.isIntersection()) {
+            propsParamType.getIntersectionTypes().forEach((t) => {
+              const typeProps = t
                 .getProperties()
-                .map((p) => p.getDeclarations()[0] as PropertySignature)
-            );
-          });
-        } else {
-          props.push(
-            ...propsParamType
+                .map((p) => p.getDeclarations()[0])
+                .filter(
+                  (d): d is PropertySignature =>
+                    d && Node.isPropertySignature(d)
+                );
+              props.push(...typeProps);
+            });
+          } else {
+            const typeProps = propsParamType
               .getProperties()
-              .map((p) => p.getDeclarations()[0] as PropertySignature)
-          );
+              .map((p) => p.getDeclarations()[0])
+              .filter(
+                (d): d is PropertySignature => d && Node.isPropertySignature(d)
+              );
+            props.push(...typeProps);
+          }
         }
       }
     }
-  }
 
-  // Fallback for React.forwardRef
-  if (props.length === 0) {
-    const forwardRef = sourceFile.getVariableDeclaration(componentName);
-    if (forwardRef) {
-      const initializer = forwardRef.getInitializer();
-      if (initializer && Node.isCallExpression(initializer)) {
-        const typeArgs = initializer.getTypeArguments();
-        if (typeArgs.length > 1) {
-          const propsTypeNode = typeArgs[1];
-          const propsType = propsTypeNode.getType();
-          if (propsType.isIntersection()) {
-            propsType.getIntersectionTypes().forEach((t) => {
-              props.push(
-                ...t
+    // Fallback for React.forwardRef
+    if (props.length === 0) {
+      const forwardRef = sourceFile.getVariableDeclaration(componentName);
+      if (forwardRef) {
+        const initializer = forwardRef.getInitializer();
+        if (initializer && Node.isCallExpression(initializer)) {
+          const typeArgs = initializer.getTypeArguments();
+          if (typeArgs.length > 1) {
+            const propsTypeNode = typeArgs[1];
+            const propsType = propsTypeNode.getType();
+            if (propsType.isIntersection()) {
+              propsType.getIntersectionTypes().forEach((t) => {
+                const typeProps = t
                   .getProperties()
-                  .map((p) => p.getDeclarations()[0] as PropertySignature)
-              );
-            });
-          } else {
-            props.push(
-              ...propsType
+                  .map((p) => p.getDeclarations()[0])
+                  .filter(
+                    (d): d is PropertySignature =>
+                      d && Node.isPropertySignature(d)
+                  );
+                props.push(...typeProps);
+              });
+            } else {
+              const typeProps = propsType
                 .getProperties()
-                .map((p) => p.getDeclarations()[0] as PropertySignature)
-            );
+                .map((p) => p.getDeclarations()[0])
+                .filter(
+                  (d): d is PropertySignature =>
+                    d && Node.isPropertySignature(d)
+                );
+              props.push(...typeProps);
+            }
           }
         }
       }
@@ -122,24 +151,32 @@ function getComponentProps(
     const propType = prop.getType();
     const isOptional = prop.hasQuestionToken();
 
-    if (isOptional) return; // Skip optional props
-
+    // Include required props and some optional props for better examples
     if (propType.isString()) {
       args.push(`${propName}: "Sample Text"`);
     } else if (propType.isNumber()) {
       args.push(`${propName}: 123`);
     } else if (propType.isBoolean()) {
       args.push(`${propName}: true`);
-    } else if (propType.isEnum()) {
-      const enumMembers = propType.getUnionTypes();
-      if (enumMembers.length > 0) {
-        const firstMember = enumMembers[0];
-        if (firstMember.isStringLiteral()) {
-          args.push(`${propName}: "${firstMember.getLiteralValue()}"`);
+    } else if (propType.isEnum() || propType.isUnion()) {
+      const unionTypes = propType.getUnionTypes();
+      if (unionTypes.length > 0) {
+        const firstType = unionTypes[0];
+        if (firstType.isStringLiteral()) {
+          args.push(`${propName}: "${firstType.getLiteralValue()}"`);
+        } else if (firstType.isNumberLiteral()) {
+          args.push(`${propName}: ${firstType.getLiteralValue()}`);
         }
       }
+    } else if (!isOptional) {
+      // For unknown required types, provide a placeholder
+      args.push(`${propName}: undefined // TODO: Provide appropriate value`);
     }
   });
+
+  if (args.length === 0) {
+    return "{}";
+  }
 
   return `{
     ${args.join(",\n    ")}
@@ -191,9 +228,12 @@ export async function generateStories() {
     const componentName = toPascalCase(rawComponentName);
     const storyFilePath = componentPath.replace(".tsx", ".stories.tsx");
 
-    // Get all named exports (excluding types)
+    // Get all exports (both named and default)
     const namedExports = sourceFile.getExportedDeclarations();
     const exportNames: string[] = [];
+    let hasDefaultExport = false;
+    let defaultExportName = "";
+
     namedExports.forEach((declarations, name) => {
       // Only include function, variable, or class exports (not types/interfaces)
       const decl = declarations[0];
@@ -202,15 +242,38 @@ export async function generateStories() {
         Node.isVariableDeclaration(decl) ||
         Node.isClassDeclaration(decl)
       ) {
-        exportNames.push(name);
+        if (name === "default") {
+          hasDefaultExport = true;
+          // Try to get the actual name of the default export
+          if (Node.isVariableDeclaration(decl)) {
+            defaultExportName = decl.getName();
+          } else if (Node.isFunctionDeclaration(decl)) {
+            defaultExportName = decl.getName() || componentName;
+          } else {
+            defaultExportName = componentName;
+          }
+        } else {
+          exportNames.push(name);
+        }
       }
     });
 
-    if (exportNames.length === 0) continue;
+    // If no exports found, skip this file
+    if (exportNames.length === 0 && !hasDefaultExport) continue;
 
-    let importStatement = `import { ${exportNames.join(
-      ", "
-    )} } from './${rawComponentName}';`;
+    // Build import statement
+    let importStatement = "";
+    if (hasDefaultExport && exportNames.length > 0) {
+      importStatement = `import ${defaultExportName}, { ${exportNames.join(
+        ", "
+      )} } from './${rawComponentName}';`;
+    } else if (hasDefaultExport) {
+      importStatement = `import ${defaultExportName} from './${rawComponentName}';`;
+    } else {
+      importStatement = `import { ${exportNames.join(
+        ", "
+      )} } from './${rawComponentName}';`;
+    }
 
     // Add imports for decorators if needed
     if (sourceFile.getFullText().includes("useChart()")) {
@@ -236,48 +299,99 @@ import { Meta, StoryObj } from '@storybook/react';
 ${importStatement}
 `;
 
-    exportNames.forEach((exportedComponent, idx) => {
-      const defaultArgs = getComponentProps(sourceFile, exportedComponent);
-      const decorators = getDecorators(sourceFile);
+    // Determine the main component for the story
+    const mainExport = hasDefaultExport ? defaultExportName : exportNames[0];
+    const defaultArgs = getComponentProps(sourceFile, mainExport);
+    const decorators = getDecorators(sourceFile);
 
-      // Prefix the title with the relative path and component name to ensure uniqueness
-      const storyTitle = `Components/${relPathForTitle}/${exportedComponent}`;
+    // Prefix the title with the relative path and component name to ensure uniqueness
+    const storyTitle = `Components/${relPathForTitle}/${mainExport}`;
 
-      storyFileContent += `
-const meta_${exportedComponent}: Meta<typeof ${exportedComponent}> = {
+    storyFileContent += `
+const meta = {
   title: '${storyTitle}',
-  component: ${exportedComponent},
+  component: ${mainExport},
   parameters: {
     layout: 'centered',
   },
   tags: ['autodocs'],
   argTypes: {},
   decorators: ${decorators},
-};
-`;
+} satisfies Meta<typeof ${mainExport}>;
 
-      // Only the first meta is exported as default
-      if (idx === 0) {
-        storyFileContent += `
-export default meta_${exportedComponent};
-`;
-      } else {
-        storyFileContent += `
-export { meta_${exportedComponent} };
-`;
-      }
+export default meta;
 
-      // Prefix the story export name with the relative path and component name
-      const storyExportName = `Default_${relPathForExport}_${exportedComponent}`;
+type Story = StoryObj<typeof meta>;
 
-      storyFileContent += `
-type Story_${exportedComponent} = StoryObj<typeof ${exportedComponent}>;
-
-export const ${storyExportName}: Story_${exportedComponent} = {
+export const Primary: Story = {
   args: ${defaultArgs},
 };
 `;
-    });
+
+    // Create stories for additional exported components, avoiding naming conflicts
+    const additionalExports = hasDefaultExport
+      ? exportNames
+      : exportNames.slice(1);
+
+    for (const exportedComponent of additionalExports) {
+      // Skip if this would create a duplicate story name
+      if (exportedComponent === mainExport) continue;
+
+      // Skip utility functions, variants, and non-component exports
+      if (
+        exportedComponent.toLowerCase().includes("utils") ||
+        exportedComponent.toLowerCase().includes("config") ||
+        exportedComponent.toLowerCase().includes("helper") ||
+        exportedComponent.toLowerCase().includes("constant") ||
+        exportedComponent.startsWith("use") || // hooks
+        exportedComponent.endsWith("Context") ||
+        exportedComponent.endsWith("Provider") ||
+        !exportedComponent.match(/^[A-Z]/) // Only components that start with capital letter
+      ) {
+        continue;
+      }
+
+      // Check if this export is actually a React component by examining its declaration
+      const componentDecl =
+        sourceFile.getVariableDeclaration(exportedComponent) ||
+        sourceFile.getFunction(exportedComponent);
+
+      if (!componentDecl) continue;
+
+      // Skip if it's a utility function like buttonVariants (created by cva)
+      const componentText = componentDecl.getText();
+      if (
+        componentText.includes("cva(") ||
+        componentText.includes("cn(") ||
+        componentText.includes("clsx(") ||
+        componentText.includes("twMerge(") ||
+        (componentText.includes("variants") &&
+          !componentText.includes("React.") &&
+          !componentText.includes("<"))
+      ) {
+        continue;
+      }
+
+      // Very inclusive detection for React components
+      // If it starts with capital letter and doesn't contain obvious utility patterns, include it
+      const looksLikeComponent = exportedComponent.match(/^[A-Z][a-zA-Z]*$/);
+
+      // Include it if it looks like a component name
+      if (!looksLikeComponent) {
+        continue;
+      }
+
+      const args = getComponentProps(sourceFile, exportedComponent);
+
+      // Create a unique story name to avoid conflicts with imported component names
+      const storyName = `${exportedComponent}Story`;
+
+      storyFileContent += `
+export const ${storyName}: Story = {
+  args: ${args},
+};
+`;
+    }
 
     project
       .createSourceFile(storyFilePath, storyFileContent, { overwrite: true })
