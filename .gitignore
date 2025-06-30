@@ -2,6 +2,9 @@
 .env*
 .env*.local
 
+# story files
+**.stories.**
+
 # dependencies
 /node_modules
 amplify/node_modules

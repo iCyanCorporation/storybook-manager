@@ -8,6 +8,8 @@ import {
   TypeAliasDeclaration,
   PropertySignature,
   Type,
+  VariableDeclaration,
+  FunctionDeclaration,
 } from "ts-morph";
 import path from "path";
 import { capitalizeFirstLetter, toPascalCase } from "../utils";
@@ -29,14 +31,76 @@ const REACT_HTML_PROPS = [
   "key",
 ];
 
-// ... (unchanged utility functions)
+// Regex pattern for component name validation
+const COMPONENT_NAME_PATTERN = /^[A-Z][a-zA-Z]*$/;
+
+// Configuration
+interface GenerateConfig {
+  componentsDir: string;
+  storyFileExtension: string;
+}
+
+const DEFAULT_CONFIG: GenerateConfig = {
+  componentsDir: "components",
+  storyFileExtension: ".stories.tsx",
+};
 
 function isLocalDeclaration(
   prop: PropertySignature,
   sourceFile: SourceFile
 ): boolean {
-  const declSourceFile = prop.getSourceFile();
-  return declSourceFile.getFilePath() === sourceFile.getFilePath();
+  try {
+    const declSourceFile = prop.getSourceFile();
+    return declSourceFile.getFilePath() === sourceFile.getFilePath();
+  } catch (error) {
+    console.warn("Failed to check local declaration:", error);
+    return false;
+  }
+}
+
+function isPropertySignature(node: Node): node is PropertySignature {
+  return Node.isPropertySignature(node);
+}
+
+function isReactComponent(
+  exportedComponent: string,
+  componentDecl: VariableDeclaration | FunctionDeclaration | undefined
+): boolean {
+  if (!componentDecl) return false;
+
+  // Check if it starts with capital letter (React component convention)
+  if (!COMPONENT_NAME_PATTERN.test(exportedComponent)) {
+    return false;
+  }
+
+  // Skip utility functions, variants, and non-component exports
+  if (
+    exportedComponent.toLowerCase().includes("utils") ||
+    exportedComponent.toLowerCase().includes("config") ||
+    exportedComponent.toLowerCase().includes("helper") ||
+    exportedComponent.toLowerCase().includes("constant") ||
+    exportedComponent.startsWith("use") || // hooks
+    exportedComponent.endsWith("Context") ||
+    exportedComponent.endsWith("Provider")
+  ) {
+    return false;
+  }
+
+  // Skip if it's a utility function like buttonVariants (created by cva)
+  const componentText = componentDecl.getText();
+  if (
+    componentText.includes("cva(") ||
+    componentText.includes("cn(") ||
+    componentText.includes("clsx(") ||
+    componentText.includes("twMerge(") ||
+    (componentText.includes("variants") &&
+      !componentText.includes("React.") &&
+      !componentText.includes("<"))
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function getComponentProps(
@@ -213,101 +277,111 @@ function getDecorators(sourceFile: SourceFile): string {
   return decorators.length > 0 ? `[${decorators}]` : "[]";
 }
 
-export async function generateStories() {
+export async function generateStories(config: Partial<GenerateConfig> = {}) {
+  const finalConfig = { ...DEFAULT_CONFIG, ...config };
   console.log("Generating Storybook stories...");
 
-  const componentPaths = await fg("components/**/*.tsx", {
+  const componentPaths = await fg(`${finalConfig.componentsDir}/**/*.tsx`, {
     ignore: ["**/*.stories.tsx"],
   });
 
   const project = new Project();
+  const processedFiles: string[] = [];
+  const failedFiles: string[] = [];
 
   for (const componentPath of componentPaths) {
-    const sourceFile = project.addSourceFileAtPath(componentPath);
-    const rawComponentName = path.basename(componentPath, ".tsx");
-    const componentName = toPascalCase(rawComponentName);
-    const storyFilePath = componentPath.replace(".tsx", ".stories.tsx");
+    try {
+      const sourceFile = project.addSourceFileAtPath(componentPath);
+      const rawComponentName = path.basename(componentPath, ".tsx");
+      const componentName = toPascalCase(rawComponentName);
+      const storyFilePath = componentPath.replace(
+        ".tsx",
+        finalConfig.storyFileExtension
+      );
 
-    // Get all exports (both named and default)
-    const namedExports = sourceFile.getExportedDeclarations();
-    const exportNames: string[] = [];
-    let hasDefaultExport = false;
-    let defaultExportName = "";
+      // Get all exports (both named and default)
+      const namedExports = sourceFile.getExportedDeclarations();
+      const exportNames: string[] = [];
+      let hasDefaultExport = false;
+      let defaultExportName = "";
+      const existingStoryNames = new Set<string>();
 
-    namedExports.forEach((declarations, name) => {
-      // Only include function, variable, or class exports (not types/interfaces)
-      const decl = declarations[0];
-      if (
-        Node.isFunctionDeclaration(decl) ||
-        Node.isVariableDeclaration(decl) ||
-        Node.isClassDeclaration(decl)
-      ) {
-        if (name === "default") {
-          hasDefaultExport = true;
-          // Try to get the actual name of the default export
-          if (Node.isVariableDeclaration(decl)) {
-            defaultExportName = decl.getName();
-          } else if (Node.isFunctionDeclaration(decl)) {
-            defaultExportName = decl.getName() || componentName;
+      namedExports.forEach((declarations, name) => {
+        // Only include function, variable, or class exports (not types/interfaces)
+        const decl = declarations[0];
+        if (
+          Node.isFunctionDeclaration(decl) ||
+          Node.isVariableDeclaration(decl) ||
+          Node.isClassDeclaration(decl)
+        ) {
+          if (name === "default") {
+            hasDefaultExport = true;
+            // Try to get the actual name of the default export
+            if (Node.isVariableDeclaration(decl)) {
+              defaultExportName = decl.getName();
+            } else if (Node.isFunctionDeclaration(decl)) {
+              defaultExportName = decl.getName() || componentName;
+            } else {
+              defaultExportName = componentName;
+            }
           } else {
-            defaultExportName = componentName;
+            exportNames.push(name);
           }
-        } else {
-          exportNames.push(name);
+        }
+      });
+
+      // If no exports found, skip this file
+      if (exportNames.length === 0 && !hasDefaultExport) {
+        console.log(`Skipping ${componentPath}: No valid exports found`);
+        continue;
+      }
+
+      // Build import statement
+      let importStatement = "";
+      if (hasDefaultExport && exportNames.length > 0) {
+        importStatement = `import ${defaultExportName}, { ${exportNames.join(
+          ", "
+        )} } from './${rawComponentName}';`;
+      } else if (hasDefaultExport) {
+        importStatement = `import ${defaultExportName} from './${rawComponentName}';`;
+      } else {
+        importStatement = `import { ${exportNames.join(
+          ", "
+        )} } from './${rawComponentName}';`;
+      }
+
+      // Add imports for decorators if needed
+      if (sourceFile.getFullText().includes("useChart()")) {
+        if (!exportNames.includes("ChartContainer")) {
+          importStatement += `\nimport { ChartContainer } from './chart';`;
         }
       }
-    });
-
-    // If no exports found, skip this file
-    if (exportNames.length === 0 && !hasDefaultExport) continue;
-
-    // Build import statement
-    let importStatement = "";
-    if (hasDefaultExport && exportNames.length > 0) {
-      importStatement = `import ${defaultExportName}, { ${exportNames.join(
-        ", "
-      )} } from './${rawComponentName}';`;
-    } else if (hasDefaultExport) {
-      importStatement = `import ${defaultExportName} from './${rawComponentName}';`;
-    } else {
-      importStatement = `import { ${exportNames.join(
-        ", "
-      )} } from './${rawComponentName}';`;
-    }
-
-    // Add imports for decorators if needed
-    if (sourceFile.getFullText().includes("useChart()")) {
-      if (!exportNames.includes("ChartContainer")) {
-        importStatement += `\nimport { ChartContainer } from './chart';`;
+      if (sourceFile.getFullText().includes("useFormContext()")) {
+        importStatement += `\nimport { useForm, FormProvider } from 'react-hook-form';`;
       }
-    }
-    if (sourceFile.getFullText().includes("useFormContext()")) {
-      importStatement += `\nimport { useForm, FormProvider } from 'react-hook-form';`;
-    }
 
-    // Use the relative path from components/ as part of the title and story export name
-    const relPath = path
-      .relative("components", componentPath)
-      .replace(/\\/g, "/")
-      .replace(/\.tsx$/, "");
-    const relPathForTitle = relPath.split("/").map(toPascalCase).join("/");
-    const relPathForExport = relPath.replace(/\/|-/g, "_");
+      // Use the relative path from components/ as part of the title and story export name
+      const relPath = path
+        .relative(finalConfig.componentsDir, componentPath)
+        .replace(/\\/g, "/")
+        .replace(/\.tsx$/, "");
+      const relPathForTitle = relPath.split("/").map(toPascalCase).join("/");
 
-    let storyFileContent = `
+      let storyFileContent = `
 import React from 'react';
 import { Meta, StoryObj } from '@storybook/react';
 ${importStatement}
 `;
 
-    // Determine the main component for the story
-    const mainExport = hasDefaultExport ? defaultExportName : exportNames[0];
-    const defaultArgs = getComponentProps(sourceFile, mainExport);
-    const decorators = getDecorators(sourceFile);
+      // Determine the main component for the story
+      const mainExport = hasDefaultExport ? defaultExportName : exportNames[0];
+      const defaultArgs = getComponentProps(sourceFile, mainExport);
+      const decorators = getDecorators(sourceFile);
 
-    // Prefix the title with the relative path and component name to ensure uniqueness
-    const storyTitle = `Components/${relPathForTitle}/${mainExport}`;
+      // Prefix the title with the relative path and component name to ensure uniqueness
+      const storyTitle = `Components/${relPathForTitle}/${mainExport}`;
 
-    storyFileContent += `
+      storyFileContent += `
 const meta = {
   title: '${storyTitle}',
   component: ${mainExport},
@@ -328,76 +402,68 @@ export const Primary: Story = {
 };
 `;
 
-    // Create stories for additional exported components, avoiding naming conflicts
-    const additionalExports = hasDefaultExport
-      ? exportNames
-      : exportNames.slice(1);
+      existingStoryNames.add("Primary");
 
-    for (const exportedComponent of additionalExports) {
-      // Skip if this would create a duplicate story name
-      if (exportedComponent === mainExport) continue;
+      // Create stories for additional exported components, avoiding naming conflicts
+      const additionalExports = hasDefaultExport
+        ? exportNames
+        : exportNames.slice(1);
 
-      // Skip utility functions, variants, and non-component exports
-      if (
-        exportedComponent.toLowerCase().includes("utils") ||
-        exportedComponent.toLowerCase().includes("config") ||
-        exportedComponent.toLowerCase().includes("helper") ||
-        exportedComponent.toLowerCase().includes("constant") ||
-        exportedComponent.startsWith("use") || // hooks
-        exportedComponent.endsWith("Context") ||
-        exportedComponent.endsWith("Provider") ||
-        !exportedComponent.match(/^[A-Z]/) // Only components that start with capital letter
-      ) {
-        continue;
-      }
+      for (const exportedComponent of additionalExports) {
+        // Skip if this would create a duplicate story name
+        if (exportedComponent === mainExport) continue;
 
-      // Check if this export is actually a React component by examining its declaration
-      const componentDecl =
-        sourceFile.getVariableDeclaration(exportedComponent) ||
-        sourceFile.getFunction(exportedComponent);
+        // Check if this export is actually a React component by examining its declaration
+        const componentDecl =
+          sourceFile.getVariableDeclaration(exportedComponent) ||
+          sourceFile.getFunction(exportedComponent);
 
-      if (!componentDecl) continue;
+        if (!isReactComponent(exportedComponent, componentDecl)) {
+          continue;
+        }
 
-      // Skip if it's a utility function like buttonVariants (created by cva)
-      const componentText = componentDecl.getText();
-      if (
-        componentText.includes("cva(") ||
-        componentText.includes("cn(") ||
-        componentText.includes("clsx(") ||
-        componentText.includes("twMerge(") ||
-        (componentText.includes("variants") &&
-          !componentText.includes("React.") &&
-          !componentText.includes("<"))
-      ) {
-        continue;
-      }
+        const componentArgs = getComponentProps(sourceFile, exportedComponent);
 
-      // Very inclusive detection for React components
-      // If it starts with capital letter and doesn't contain obvious utility patterns, include it
-      const looksLikeComponent = exportedComponent.match(/^[A-Z][a-zA-Z]*$/);
+        // Create a unique story name to avoid conflicts with imported component names
+        let storyName = `${exportedComponent}Story`;
+        let counter = 1;
+        while (existingStoryNames.has(storyName)) {
+          storyName = `${exportedComponent}Story${counter}`;
+          counter++;
+        }
+        existingStoryNames.add(storyName);
 
-      // Include it if it looks like a component name
-      if (!looksLikeComponent) {
-        continue;
-      }
-
-      const args = getComponentProps(sourceFile, exportedComponent);
-
-      // Create a unique story name to avoid conflicts with imported component names
-      const storyName = `${exportedComponent}Story`;
-
-      storyFileContent += `
+        storyFileContent += `
 export const ${storyName}: Story = {
-  args: ${args},
+  args: ${componentArgs},
 };
 `;
-    }
+      }
 
-    project
-      .createSourceFile(storyFilePath, storyFileContent, { overwrite: true })
-      .saveSync();
-    console.log(`Generated: ${storyFilePath}`);
+      project
+        .createSourceFile(storyFilePath, storyFileContent, { overwrite: true })
+        .saveSync();
+
+      processedFiles.push(componentPath);
+      console.log(`Generated: ${storyFilePath}`);
+
+      // Clean up memory by removing the source file from the project
+      project.removeSourceFile(sourceFile);
+    } catch (error) {
+      failedFiles.push(componentPath);
+      console.warn(
+        `Failed to process ${componentPath}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      continue;
+    }
   }
 
-  console.log("Story generation complete!");
+  // Summary
+  console.log(`\nStory generation complete!`);
+  console.log(`✅ Successfully processed: ${processedFiles.length} files`);
+  if (failedFiles.length > 0) {
+    console.log(`❌ Failed to process: ${failedFiles.length} files`);
+    console.log(`Failed files:`, failedFiles);
+  }
 }

@@ -32,19 +32,19 @@ Creating `.stories.tsx` files manually is time-consuming and error-prone. storyb
 
 ## ⚙️ Installation & Setup
 
-### 1️⃣ Install globally
+### 1. Install globally
 
 ```bash
 npm install -g storybook-manager
 ```
 
-### 2️⃣ Or install locally as a dev dependency
+### 2. Or install locally as a dev dependency
 
 ```bash
 npm install --save-dev storybook-manager
 ```
 
-### 3️⃣ Add npm scripts to your project’s `package.json`
+### 3. Add npm scripts to your project’s `package.json`
 
 ```json
 "scripts": {
@@ -53,15 +53,16 @@ npm install --save-dev storybook-manager
 }
 ```
 
-### 4️⃣ Place your React components under a `components/` folder in your project root.
+### 4. Place your React components under a `components/` folder in your project root.
 
-### 5️⃣ Import your global CSS in Storybook's `preview.ts`
+### 5. Import your global CSS in Storybook's `preview.ts`
 
 Add the following line to your `.storybook/preview.ts` file to ensure your global styles are applied in Storybook:
 
-```ts
-import type { Preview } from "@storybook/nextjs-vite";
-import "@/app/globals.css";
+```diff
+ import type { Preview } from "@storybook/nextjs-vite";
++ import "@/app/globals.css";
+(other code)
 ```
 
 ---
@@ -84,6 +85,12 @@ Recursively delete all `.stories.tsx` files under `./components`.
 
 ```bash
 npm run story:clean
+```
+
+### Open Storybook
+
+```bash
+npm run storybook
 ```
 
 ---

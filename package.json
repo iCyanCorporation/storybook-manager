@@ -1,6 +1,6 @@
 {
   "name": "storybook-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Effortlessly generate and clean Storybook stories for all React components in your project",
   "main": "dist/index.js",
   "bin": {
