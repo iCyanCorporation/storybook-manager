@@ -1,11 +1,11 @@
 # storybook-manager
 
-> 🚀 **Effortlessly generate and clean Storybook stories for all React components in your project.**
+> **Effortlessly generate and clean Storybook stories for all React components in your project.**
 > Maintain consistent, up-to-date component documentation with zero manual work.
 
 ---
 
-## 📖 Project Overview
+## Project Overview
 
 **storybook-manager** is a simple CLI tool that scans your `components/` directory and **automatically generates or removes Storybook stories** for every React component, including nested folders.
 
@@ -20,7 +20,7 @@ Creating `.stories.tsx` files manually is time-consuming and error-prone. storyb
 
 ---
 
-## 🏛️ Architecture & Design Principles
+## Architecture & Design Principles
 
 - **Node.js CLI with TypeScript** for safety and maintainability.
 - **fast-glob** for efficient recursive directory scanning.
@@ -30,7 +30,7 @@ Creating `.stories.tsx` files manually is time-consuming and error-prone. storyb
 
 ---
 
-## ⚙️ Installation & Setup
+## Installation & Setup
 
 ### 1. Install globally
 
@@ -60,14 +60,15 @@ npm install --save-dev storybook-manager
 Add the following line to your `.storybook/preview.ts` file to ensure your global styles are applied in Storybook:
 
 ```diff
- import type { Preview } from "@storybook/nextjs-vite";
+// .storybook/preview.ts
+import type { Preview } from "@storybook/nextjs-vite";
 + import "@/app/globals.css";
 (other code)
 ```
 
 ---
 
-## 🚀 Usage
+## Usage
 
 storybook-manager provides two intuitive commands:
 
@@ -95,7 +96,7 @@ npm run storybook
 
 ---
 
-## 🗂 Expected folder structure
+## Expected folder structure
 
 **Before:**
 
@@ -128,7 +129,7 @@ components/
 
 ---
 
-## 🗂️ Code & Folder Structure
+## Code & Folder Structure
 
 ```plaintext
 /
@@ -146,7 +147,7 @@ components/
 
 ---
 
-## 🤝 Contribution & Collaboration
+## Contribution & Collaboration
 
 We welcome contributions from everyone! Please follow these steps:
 
@@ -167,7 +168,7 @@ We welcome contributions from everyone! Please follow these steps:
 
 ---
 
-## 📜 Licensing & Contact Information
+## Licensing & Contact Information
 
 Licensed under the [MIT License](./LICENSE).
 
